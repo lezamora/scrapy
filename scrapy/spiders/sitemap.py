@@ -36,10 +36,29 @@ class SitemapSpider(Spider):
         than a given date (see docs).
         """
         for entry in entries:
+            yield entry            
+            
+    def sitemap_index_filter(self, entries):
+        """ Lucas Zamora
+        This method can be used to filter sitemaps within a main sitemap.
+        """
+        for entry in entries:
             yield entry
 
     def _parse_sitemap(self, response):
-        if response.url.endswith('/robots.txt'):
+        """ Lucas Zamora
+        One more if is added for those sitemaps that have sitemaps included. 
+        It is necessary to be able to use this method to add to the end of 
+        the url the string ?nested.
+        """
+        if response.url.endswith('?nested'):
+            body = self._get_sitemap_body(response)
+            s = Sitemap(body)
+            it = self.sitemap_index_filter(s)
+            for url, meta in iterloc(it):
+                yield Request(url, callback=self._parse_sitemap)
+                
+        elif response.url.endswith('/robots.txt'):
             for url in sitemap_urls_from_robots(response.text, base_url=response.url):
                 yield Request(url, callback=self._parse_sitemap)
         else:
@@ -53,14 +72,16 @@ class SitemapSpider(Spider):
             it = self.sitemap_filter(s)
 
             if s.type == 'sitemapindex':
-                for loc in iterloc(it, self.sitemap_alternate_links):
+                # Lucas Zamora: Add metadata so you don't have to search 
+                # for these fields later.
+                for loc, meta in iterloc(it, self.sitemap_alternate_links):
                     if any(x.search(loc) for x in self._follow):
-                        yield Request(loc, callback=self._parse_sitemap)
+                        yield Request(loc, callback=self._parse_sitemap, meta=meta)
             elif s.type == 'urlset':
-                for loc in iterloc(it, self.sitemap_alternate_links):
+                for loc, meta in iterloc(it, self.sitemap_alternate_links):
                     for r, c in self._cbs:
                         if r.search(loc):
-                            yield Request(loc, callback=c)
+                            yield Request(loc, callback=c, meta=meta)
                             break
 
     def _get_sitemap_body(self, response):
@@ -91,9 +112,12 @@ def regex(x):
 
 
 def iterloc(it, alt=False):
+    # Lucas Zamora: Return metadata so you don't have to search 
+    # for these fields later.
     for d in it:
-        yield d['loc']
+        yield d['loc'], d
 
         # Also consider alternate URLs (xhtml:link rel="alternate")
         if alt and 'alternate' in d:
-            yield from d['alternate']
+            for l in d['alternate']:
+                yield l, d

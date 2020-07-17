@@ -31,7 +31,16 @@ class Sitemap:
                     if 'href' in el.attrib:
                         d.setdefault('alternate', []).append(el.get('href'))
                 else:
-                    d[name] = el.text.strip() if el.text else ''
+                    # Lucas Zamora: add one more iteration to 
+                    # get all the fields of the sitemap
+                    if 'news' in name:
+                        for e in el.getchildren():
+                            tag2 = e.tag
+                            name = tag2.split('}', 1)[1] if '}' in tag2 else tag2
+                            name = name.replace('news:', '')
+                            d[name] = e.text.strip() if e.text else ''
+                    else:
+                        d[name] = el.text.strip() if el.text else ''
 
             if 'loc' in d:
                 yield d
